@@ -3,20 +3,13 @@ import os
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-import matplotlib.pyplot as plt
 import numpy as np
-
-from pyxu.operator import NUFFT, L21Norm, Gradient, SquaredL2Norm, PositiveOrthant, PositiveL1Norm
-from pyxu.opt.solver import PD3O
-from pyxu.util import view_as_complex
-from pyxu.opt.stop import RelError, MaxIter
+from pyxu.operator import NUFFT
 
 
 
-os.environ["RASCIL_DATA"] = "./data/"
+os.environ["RASCIL_DATA"] = "../data/"
 
-from rascil.processing_components import show_image, create_test_image, \
-    plot_uvcoverage, plot_visibility
 from ska_sdp_func_python.util.coordinate_support import skycoord_to_lmn
 from ska_sdp_datamodels.configuration.config_create import (
         create_named_configuration,
@@ -77,6 +70,5 @@ forward = NUFFT.type3(
 
 x = m31image.pixels.data.squeeze().copy()
 y = forward(x.ravel())
-breakpoint()
 adj = forward.adjoint(y)
 print(any(np.isnan(adj)))
