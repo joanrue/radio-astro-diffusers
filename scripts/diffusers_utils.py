@@ -17,6 +17,21 @@ def encode_prompt(prompt, tokenizer, text_encoder, torch_device):
     return torch.cat([uncond_embeddings, prompt_embeddings])
 
 
+def to_diffusers(arr):
+    r"""Normalize the input array to [-1, 1]"""
+    min_ = arr.min()
+    max_ = arr.max()
+    # First to [0, 1]
+    arr -= min_
+    arr /= max_
+    return (arr - 0.5) * 2.0, min_, max_
+
+
+def to_pyxu(arr, min_, max_):
+    r"""Normalize the input array to [min, max]"""
+    return max_ * (arr + 1.0) / 2.0 + min_
+
+
 def to_m1_1(arr):
     r"""Normalize the input array to [-1, 1]"""
     return (arr - 0.5) * 2.0
@@ -45,7 +60,7 @@ def load_models(prompt, dtype, CUDA):
     scheduler = DDPMScheduler(
         beta_start=0.0001,
         beta_end=0.0002,
-        variance_type="scaled_linear",
+        # beta_schedule="scaled_linear"
     )
 
     # Move the encoder and decoder to GPU if CUDA is enabled

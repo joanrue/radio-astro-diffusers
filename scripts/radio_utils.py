@@ -21,6 +21,8 @@ from ska_sdp_datamodels.visibility import create_visibility
 from ska_sdp_datamodels.science_data_model.polarisation_model import (
     PolarisationFrame,
 )
+from pyxu.operator import FFT, DiagonalOp
+
 # Define a function to display the reconstructed images
 def show_image(ax, image, sky_im, title):
     nd = pxd.NDArrayInfo.from_obj(image)
@@ -60,13 +62,13 @@ def get_direction_cosines(image):
 
 
 def create_dataset(name="LOWBD2",
-             rmax=3_000.0,
+             rmax=400.0,
              ra=+15.0 * u.deg,
              dec=-45.0 * u.deg):
     lowr3 = create_named_configuration(name=name, rmax=rmax)
     visibility = create_visibility(
         config=lowr3,
-        times=np.linspace(-4, 4, 9) * np.pi / 12,
+        times=np.linspace(-3, 3, 4) * np.pi / 12,
         frequency=np.r_[15e7],
         channel_bandwidth=np.r_[5e4],
         weight=1.0,
@@ -82,49 +84,34 @@ def create_dataset(name="LOWBD2",
     )
     return sky_image, visibility
 
-def create_forward(sky_image, visibilities, upsample=2, repeats=1):
-    use_nfft = False
+
+def create_forward(visibilities, xp):
     uvw = visibilities.visibility_acc.uvw_lambda.reshape(-1, 3)
 
-    if use_nfft:
-        direction_cosines, _ = get_direction_cosines(sky_image)
-        # Create the NUFFT forward operator
-        xyz = direction_cosines.reshape(*sky_image.pixels.shape[-2:], 3)
-        xyz = np.repeat(np.repeat(xyz, repeats=upsample, axis=0), repeats=upsample, axis=1)
-        xyz = xyz.reshape(-1, 3)
-        xyz = np.repeat(xyz, repeats=repeats, axis=0)
+    uvw -= uvw.min()
+    uvw /= uvw.max()
+    uvw = (uvw * 511).astype(int)
+    mask = np.zeros((3, 512, 512, 2), dtype="float32")
 
-        forward = NUFFT.type3(
-            x=xyz, z=2 * np.pi * uvw, real=True, isign=-1,
-        )
+    for pos in uvw:
+        mask[:, pos[0], pos[1]] = True
 
-    else:
-        uvw -= uvw.min()
-        uvw /= uvw.max()
-        uvw = (uvw * 511).astype(int)
-        mask = np.zeros((512, 512), dtype=bool)
+    mask = np.fft.fftshift(mask, axes=(1, 2))
+    mask = xp.array(mask)
+    forward = (
+        DiagonalOp(vec=mask.ravel()) * FFT(
+        arg_shape=(3, 512, 512),
+        axes=(1, 2),
+        real=True
+    )
+    )
+    # forward = FFT(
+    #     arg_shape=(3, 512, 512),
+    #     axes=(1, 2),
+    #     real=True)
 
-        for pos in uvw:
-            mask[pos[0], pos[1]] = True
-        mask = np.where(mask.ravel())[0]
-        from pyxu.operator import FFT, SubSample
-        forward = (
-                SubSample(
-                    (3, 512 * 512, 2),
-                    slice(None), mask, slice(None)
-                ) * FFT(
-            arg_shape=(3, 512, 512),
-            axes=(1, 2),
-            real=True
-        )
-        )
-        # forward = (FFT(
-        #     arg_shape=(3, 512, 512),
-        #     axes=(1, 2),
-        #     real=True
-        # )
-        # )
-    return forward
+
+    return (1. / 512.) * forward
 
 def add_noise(y, snr_db):
     """
